@@ -58,8 +58,40 @@ class Glm4ReasoningParser(BaseThinkingReasoningParser):
         self,
         model_output: str,
     ) -> tuple[str | None, str | None]:
-        cleaned = model_output.replace(_BOX_START, "").replace(_BOX_END, "")
-        return super().extract_reasoning(cleaned)
+        """
+        Extract reasoning from GLM4 output.
+
+        GLM4 typically only outputs </think> (not <think>) because the start
+        token was injected in the prompt by the chat template.
+
+        Args:
+            model_output: Complete model output text.
+
+        Returns:
+            (reasoning, content) tuple.
+        """
+        text = model_output
+
+        # Case 1: Both tags present (rare, but handle it)
+        if self.start_token in text and self.end_token in text:
+            _, _, after_start = text.partition(self.start_token)
+            reasoning, _, content = after_start.partition(self.end_token)
+            return reasoning.strip() or None, content.strip() or None
+
+        # Case 2: Only closing tag (most common for GLM)
+        # Model was already "in reasoning" due to prompt injection
+        if self.end_token in text:
+            reasoning, _, content = text.partition(self.end_token)
+            return reasoning.strip() or None, content.strip() or None
+
+        # Case 3: Only start tag (reasoning in progress)
+        if self.start_token in text:
+            _, _, reasoning = text.partition(self.start_token)
+            return reasoning.strip() or None, None
+
+        # Case 4: No tags - pure content (thinking disabled)
+        return None, model_output
+
 
     def extract_reasoning_streaming(
         self,

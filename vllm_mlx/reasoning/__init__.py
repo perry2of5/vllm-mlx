@@ -25,6 +25,7 @@ Usage:
 """
 
 from .base import DeltaMessage, ReasoningParser
+from .glm4_parser import Glm4ReasoningParser
 from .think_parser import BaseThinkingReasoningParser
 
 # Parser registry
@@ -82,6 +83,7 @@ def _register_builtin_parsers():
     from .harmony_parser import HarmonyReasoningParser
     from .qwen3_parser import Qwen3ReasoningParser
 
+    register_parser("glm4", Glm4ReasoningParser)
     register_parser("qwen3", Qwen3ReasoningParser)
     register_parser("deepseek_r1", DeepSeekR1ReasoningParser)
     register_parser("gpt_oss", GptOssReasoningParser)

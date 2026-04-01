@@ -10,6 +10,7 @@ from vllm_mlx.tool_parsers import (
     DeepSeekToolParser,
     FunctionaryToolParser,
     Gemma4ToolParser,
+    Glm47ToolParser,
     GraniteToolParser,
     HermesToolParser,
     KimiToolParser,
@@ -858,7 +859,9 @@ class TestQwen3CoderParser:
         """Test bare <function=...> blocks without <tool_call> wrapper."""
         parser = HermesToolParser()
         text = (
-            "<function=get_weather>" "<parameter=city>Berlin</parameter>" "</function>"
+            "<function=get_weather>"
+            "<parameter=city>Berlin</parameter>"
+            "</function>"
         )
         result = parser.extract_tool_calls(text)
 
@@ -1403,3 +1406,122 @@ class TestQwenStreamingBuffering:
         assert len(emitted_calls) == 2
         assert emitted_calls[0]["function"]["name"] == "func1"
         assert emitted_calls[1]["function"]["name"] == "func2"
+
+
+class TestGLM47ToolParser:
+    """Tests for GLM47 tool parser."""
+
+    def test_zero_arguments_tool_call(self):
+        """Test Fix 2: Handle zero-argument tool calls without crashing."""
+        parser = Glm47ToolParser()
+
+        output = "<tool_call>get_current_time</tool_call>"
+
+        result = parser.extract_tool_calls(output)
+
+        assert result.tools_called is True
+        assert len(result.tool_calls) == 1
+        assert result.tool_calls[0]["name"] == "get_current_time"
+        args = json.loads(result.tool_calls[0]["arguments"])
+        assert args == {}
+
+    def test_with_arguments(self):
+        """Test tool call with arguments."""
+        parser = Glm47ToolParser()
+
+        output = "<tool_call>search\n<arg_key>query</arg_key><arg_value>Python</arg_value></tool_call>"
+
+        result = parser.extract_tool_calls(output)
+
+        assert result.tools_called is True
+        assert len(result.tool_calls) == 1
+        assert result.tool_calls[0]["name"] == "search"
+        args = json.loads(result.tool_calls[0]["arguments"])
+        assert args["query"] == "Python"
+
+    def test_streaming_zero_args(self):
+        """Test Fix 2: Streaming with zero-argument tool call."""
+        parser = Glm47ToolParser()
+
+        chunks = ["<tool_call>", "get_status", "</tool_call>"]
+        accumulated = ""
+        tool_calls_found = False
+
+        for chunk in chunks:
+            prev = accumulated
+            accumulated += chunk
+            r = parser.extract_tool_calls_streaming(
+                previous_text=prev,
+                current_text=accumulated,
+                delta_text=chunk,
+            )
+            if r is not None and "tool_calls" in r:
+                tool_calls_found = True
+                assert r["tool_calls"][0]["function"]["name"] == "get_weather"
+                break
+        assert tool_calls_found
+
+    def test_streaming_bracket_call_closing_marker_split(self, parser):
+        """Qwen bracket calls should complete when ')' and ']' split chunks."""
+        chunks = [
+            '[Calling tool: add({"a": 1, "b": 2})',
+            "]",
+        ]
+
+        accumulated = ""
+        emitted = None
+        for chunk in chunks:
+            previous = accumulated
+            accumulated += chunk
+            emitted = parser.extract_tool_calls_streaming(
+                previous_text=previous,
+                current_text=accumulated,
+                delta_text=chunk,
+            )
+
+        assert emitted is not None
+        assert "tool_calls" in emitted
+        assert emitted["tool_calls"][0]["function"]["name"] == "add"
+        assert emitted["tool_calls"][0]["function"]["arguments"] == ('{"a": 1, "b": 2}')
+
+    def test_streaming_partial_marker_buffered(self, parser):
+        """Test that partial '<function' is buffered (not leaked as content)."""
+        r = parser.extract_tool_calls_streaming(
+            previous_text="",
+            current_text="Sure.",
+            delta_text="Sure.",
+        )
+        assert r == {"content": "Sure."}
+
+        # Partial marker "<function" — should be buffered
+        r = parser.extract_tool_calls_streaming(
+            previous_text="Sure.",
+            current_text="Sure.<function",
+            delta_text="<function",
+        )
+        assert r is None  # Buffered, not emitted
+
+        # "=" confirms tool call marker
+        r = parser.extract_tool_calls_streaming(
+            previous_text="Sure.<function",
+            current_text="Sure.<function=get_weather>",
+            delta_text="=get_weather>",
+        )
+        assert r is None  # Inside incomplete function block
+
+    def test_streaming_false_positive_functional(self, parser):
+        """Regression: '<functional' across chunk boundary must NOT be suppressed.
+
+        When a delta contains 'Look at <function', the content before the
+        partial marker ('Look at ') must be emitted immediately. Only the
+        marker suffix is buffered. On recovery, the marker prefix is
+        re-emitted with the next delta so no text is lost.
+        """
+        # Token 1: "Look at <function" — emit "Look at ", buffer "<function"
+        r = parser.extract_tool_calls_streaming(
+            previous_text="",
+                assert r["tool_calls"][0]["function"]["name"] == "get_status"
+                args = json.loads(r["tool_calls"][0]["function"]["arguments"])
+                assert args == {}
+
+        assert tool_calls_found, "Zero-argument tool call should have been detected"

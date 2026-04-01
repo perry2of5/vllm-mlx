@@ -7,6 +7,7 @@ Tests cover:
 - Qwen3 parser (non-streaming and streaming)
 - DeepSeek-R1 parser (non-streaming and streaming)
 - Gemma 4 parser (channel protocol, streaming, channel name stripping)
+- GLM4 parser (reasoning extraction)
 - Edge cases (no tags, partial tags, etc.)
 """
 
@@ -14,6 +15,7 @@ import pytest
 
 from vllm_mlx.reasoning import (
     DeltaMessage,
+    Glm4ReasoningParser,
     ReasoningParser,
     get_parser,
     list_parsers,
@@ -30,6 +32,7 @@ class TestParserRegistry:
         assert "qwen3" in parsers
         assert "deepseek_r1" in parsers
         assert "gemma4" in parsers
+        assert "glm4" in parsers
 
     def test_get_parser_qwen3(self):
         """Should be able to get Qwen3 parser."""
@@ -40,6 +43,12 @@ class TestParserRegistry:
     def test_get_parser_deepseek(self):
         """Should be able to get DeepSeek-R1 parser."""
         parser_cls = get_parser("deepseek_r1")
+        parser = parser_cls()
+        assert isinstance(parser, ReasoningParser)
+
+    def test_get_parser_glm4(self):
+        """Should be able to get GLM4 parser."""
+        parser_cls = get_parser("glm4")
         parser = parser_cls()
         assert isinstance(parser, ReasoningParser)
 
@@ -962,8 +971,7 @@ class TestGptOssParser:
     def test_constrain_tokens_stripped(self, parser):
         """<|constrain|> should not leak into output."""
         output = (
-            "<|channel|>final <|constrain|>JSON<|message|>"
-            '{"hello":"world"}<|return|>'
+            '<|channel|>final <|constrain|>JSON<|message|>{"hello":"world"}<|return|>'
         )
         reasoning, content = parser.extract_reasoning(output)
         assert "<|constrain|>" not in (content or "")
