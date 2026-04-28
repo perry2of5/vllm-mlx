@@ -532,7 +532,7 @@ class TestSimpleEngineConcurrency:
         engine._draft_model = object()
 
         with (
-            patch("vllm_mlx.engine.simple._bind_worker_generation_streams"),
+            patch("vllm_mlx.engine.simple.bind_generation_streams"),
             patch(
                 "mlx_lm.models.cache.make_prompt_cache",
                 return_value=["backbone-cache"],

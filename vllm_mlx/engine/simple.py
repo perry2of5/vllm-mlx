@@ -29,11 +29,6 @@ from ..mlx_streams import bind_generation_streams
 logger = logging.getLogger(__name__)
 
 
-def _bind_worker_generation_streams() -> None:
-    """Rebind mlx generation streams inside the current worker thread."""
-    bind_generation_streams()
-
-
 def _seed_logits_processors(
     seed_tokens: mx.array | None,
     processors: list[Any] | None,
@@ -331,7 +326,7 @@ class SimpleEngine(BaseEngine):
         async with self._generation_lock:
 
             def run_bound():
-                _bind_worker_generation_streams()
+                bind_generation_streams()
                 return func(*args, **kwargs)
 
             task = asyncio.create_task(asyncio.to_thread(run_bound))
